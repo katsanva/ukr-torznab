@@ -209,13 +209,18 @@ def detect_author(dom) -> str | None:
 _LANG_MAP_NORMALISED = [(str(decancer_parse(k)), v) for k, v in LANG_MAP.items()]
 # A character followed by U+0336 (combining long stroke overlay) is crossed out.
 _STRUCK_OUT_RE = re.compile(".̶")
+_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 
 
 def _detect_single_lang(text: str) -> Lang:
-    normalised = str(decancer_parse(_STRUCK_OUT_RE.sub("", text)))
-    for substr, lang in _LANG_MAP_NORMALISED:
-        if substr in normalised:
-            return lang
+    text = _STRUCK_OUT_RE.sub("", text)
+    # The language name wins over a flag image: "англійська ![](…/uk-flag.gif)" is English shown
+    # with the UK flag. Flags only decide when the line names no language.
+    for candidate in (_IMAGE_RE.sub("", text), text):
+        normalised = str(decancer_parse(candidate))
+        for substr, lang in _LANG_MAP_NORMALISED:
+            if substr in normalised:
+                return lang
     return Lang.UNKNOWN
 
 
