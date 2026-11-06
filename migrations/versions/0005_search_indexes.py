@@ -31,6 +31,10 @@ def upgrade() -> None:
     op.create_index("ix_release_imdb_id", "release", ["imdb_id"])
     op.create_index("ix_release_tvdb_id", "release", ["tvdb_id"])
     op.create_index("ix_release_tmdb_id", "release", ["tmdb_id"])
+    # Without statistics SQLite looks topics up by rowid instead of through ix_topic_search,
+    # which reads the scattered topic rows again
+    op.execute("ANALYZE topic")
+    op.execute("ANALYZE release")
 
 
 def downgrade() -> None:
