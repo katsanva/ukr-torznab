@@ -18,6 +18,17 @@ topic = sa.Table(
     sa.Column("added_on", sa.Date(), nullable=False),
     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     sa.Column("observed_at", sa.DateTime(timezone=True), nullable=False),
+    # Covers the topic columns search_releases reads (migration 0005)
+    sa.Index(
+        "ix_topic_search",
+        "id",
+        "observed_at",
+        "name",
+        "download_id",
+        "status",
+        "seeders",
+        "leechers",
+    ),
 )
 
 release = sa.Table(
@@ -59,6 +70,10 @@ release = sa.Table(
     sa.Column("parser_version", sa.Integer, nullable=True),
     sa.Column("acodec", sa.Text, nullable=True),
     sa.Column("registered_at", sa.DateTime(timezone=True), nullable=False),
+    sa.Index("ix_release_registered_at", "registered_at", "result", "title"),
+    sa.Index("ix_release_imdb_id", "imdb_id"),
+    sa.Index("ix_release_tvdb_id", "tvdb_id"),
+    sa.Index("ix_release_tmdb_id", "tmdb_id"),
 )
 
 page = sa.Table(
