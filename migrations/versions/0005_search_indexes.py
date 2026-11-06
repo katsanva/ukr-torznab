@@ -27,7 +27,9 @@ def upgrade() -> None:
         "topic",
         ["id", "observed_at", "name", "download_id", "status", "seeders", "leechers"],
     )
-    op.create_index("ix_release_registered_at", "release", ["registered_at", "result", "title"])
+    op.create_index(
+        "ix_release_registered_at", "release", ["registered_at", "result", "content_type", "title"]
+    )
     op.create_index("ix_release_imdb_id", "release", ["imdb_id"])
     op.create_index("ix_release_tvdb_id", "release", ["tvdb_id"])
     op.create_index("ix_release_tmdb_id", "release", ["tmdb_id"])
