@@ -10,7 +10,7 @@ import httpx
 from httpcore._backends.auto import AutoBackend
 from httpx_limiter import Rate
 
-from ukr_torznab.clients._http import CONNECT_RETRIES, make_client
+from ukr_torznab.clients._http import CONNECT_RETRIES, DEFAULT_TIMEOUT, make_client
 from ukr_torznab.settings import TOLOKA_CATEGORIES
 from ukr_torznab.tasks.scraper.check_topics import RefreshTopicsTask
 
@@ -92,3 +92,9 @@ def test_client_retries_failed_connections():
     finally:
         AutoBackend.connect_tcp, AutoBackend.sleep = saved  # type: ignore[method-assign]
     assert attempts == 1 + CONNECT_RETRIES
+
+
+def test_client_timeout_default_and_override():
+    rate = Rate.create(1, 1)
+    assert make_client("http://x", rate=rate).timeout == DEFAULT_TIMEOUT
+    assert make_client("http://x", rate=rate, timeout=60).timeout == httpx.Timeout(60)

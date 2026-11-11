@@ -5,6 +5,8 @@ from httpx_limiter import AsyncRateLimitedTransport, Rate
 from httpx_limiter.aiolimiter import AiolimiterAsyncLimiter
 
 CONNECT_RETRIES = 3
+# httpx defaults to 5 s, too short for Toloka pages fetched over a VPN.
+DEFAULT_TIMEOUT = httpx.Timeout(30, connect=10)
 
 BROWSER_HEADERS: dict[str, str] = {
     "accept": (
@@ -28,6 +30,7 @@ def make_client(base_url: str, *, rate: Rate, **kwargs: Any) -> httpx.AsyncClien
     Failed connection attempts are retried: one connect timeout would otherwise
     abort a whole category crawl.
     """
+    kwargs.setdefault("timeout", DEFAULT_TIMEOUT)
     return httpx.AsyncClient(
         base_url=base_url,
         transport=AsyncRateLimitedTransport.create(
