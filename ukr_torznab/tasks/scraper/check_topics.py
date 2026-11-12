@@ -1,5 +1,6 @@
 import logging
 
+import httpx
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -35,11 +36,18 @@ class RefreshTopicsTask(AbstractTask):
             "RefreshTopicsTask: starting full refresh of %d categories",
             len(TOLOKA_CATEGORIES),
         )
+        failed = 0
         for category in TOLOKA_CATEGORIES:
             if not self.running:
                 break
-            await self.process_category(category)
-        logger.info("RefreshTopicsTask: full refresh complete")
+            try:
+                await self.process_category(category)
+            except httpx.HTTPError as e:
+                # Move on: the next full refresh is 10 hours away, and search hides
+                # topics not seen for SEARCH_WINDOW, so one failure must not skip the rest.
+                failed += 1
+                logger.warning("Category %s: refresh stopped: %r", category, e)
+        logger.info("RefreshTopicsTask: full refresh complete, %d categories failed", failed)
 
     async def process_category(self, category):
         page = 0
