@@ -21,6 +21,10 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    if op.get_bind().dialect.name == "sqlite":
+        # Debian's SQLite zeroes every freed page by default, which writes the dropped
+        # gigabytes through the write-ahead log again.
+        op.execute("PRAGMA secure_delete = OFF")
     for table in ("imdb_titles", "imdb_titles_tmp", "imdb_titles_old"):
         op.execute(f"DROP TABLE IF EXISTS {table}")
 

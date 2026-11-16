@@ -50,6 +50,9 @@ def _run_migrations() -> None:
 def _limit_sqlite_wal(dbapi_connection, _connection_record) -> None:
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_size_limit = 67108864")
+    # Debian's SQLite zeroes freed pages by default; nothing here is secret, and it doubles
+    # what replaced page blobs write to the log.
+    cursor.execute("PRAGMA secure_delete = OFF")
     cursor.close()
 
 
