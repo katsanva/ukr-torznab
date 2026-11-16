@@ -26,7 +26,7 @@ async def _title_for_ids(request: Request, params: SearchParams, *, tv: bool) ->
         return None
     engine: AsyncEngine = request.app.state.engine
     client = request.app.state.skyhook_client if tv else request.app.state.servarr_client
-    async with engine.begin() as conn:
+    async with engine.connect() as conn:
         meta = await client.get_metadata(conn, params.imdb_id)
     if not meta:
         return None

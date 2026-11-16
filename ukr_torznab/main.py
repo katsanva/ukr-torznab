@@ -151,7 +151,7 @@ async def main():
                 CheckNewTopicsTask(client=toloka_client, engine=engine),
                 RefreshTopicsTask(client=toloka_client, engine=engine),
                 DownloadTopicsTask(client=toloka_client, engine=engine),
-                RefreshImdbTask(engine=engine),
+                RefreshImdbTask(),
                 ParseTopicsTask(
                     engine=engine,
                     skyhook_client=skyhook_client,
@@ -173,6 +173,11 @@ async def main():
             tasks.append(
                 RenameTorrentsTask(engine=engine, qbt_client=qbt_client, utp_client=utp_client),
             )
+
+        if engine.dialect.name == "sqlite":
+            from ukr_torznab.tasks.wal_checkpoint import WalCheckpointTask
+
+            tasks.append(WalCheckpointTask(engine=engine))
 
         for task in tasks:
             task.start()

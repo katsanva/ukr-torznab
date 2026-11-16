@@ -1,6 +1,9 @@
 import os
+from pathlib import Path
 
 DATABASE_URL: str = os.environ["DATABASE_URL"]
+# IMDB titles live in their own SQLite file whatever DATABASE_URL points at.
+IMDB_DATABASE_PATH: Path = Path(os.environ.get("IMDB_DATABASE_PATH", "imdb.db"))
 ALEMBIC_DATABASE_URL: str = DATABASE_URL.replace("+aiosqlite", "").replace("+asyncpg", "+psycopg2")
 
 OPENAI_API_KEY: str | None = os.environ.get("OPENAI_API_KEY")

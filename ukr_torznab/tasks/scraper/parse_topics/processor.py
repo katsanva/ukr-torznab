@@ -10,12 +10,11 @@ import libtorrent as lt
 from lxml import etree
 from lxml.etree import _Element, tostring
 from openai import AsyncOpenAI
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from ukr_torznab.clients.servarr import ServarrClient
 from ukr_torznab.clients.skyhook import SkyhookClient
-from ukr_torznab.db.tables import imdb_titles as imdb_titles_table
+from ukr_torznab.db import imdb as imdb_db
 from ukr_torznab.models import AudioType, ContentType
 from ukr_torznab.tasks.scraper.parse_topics.episodes import match_episodes, match_episodes_llm
 from ukr_torznab.tasks.scraper.parse_topics.extras import (
@@ -120,16 +119,7 @@ async def process_single_page(
     imdb: int = int(imdb_raw[2:])
 
     # 5. Title type lookup
-    row = (
-        await conn.execute(
-            select(
-                imdb_titles_table.c.title_type,
-                imdb_titles_table.c.primary_title,
-                imdb_titles_table.c.original_title,
-                imdb_titles_table.c.start_year,
-            ).where(imdb_titles_table.c.id == imdb),
-        )
-    ).first()
+    row = await imdb_db.lookup(imdb)
     if not row:
         return SkippedPage(pid, SkipReason.IMDB_NOT_IN_DATABASE)
     title_type, primary_title, original_title, start_year = row

@@ -58,7 +58,7 @@ Continuously indexes toloka.to releases.
 | `CheckNewTopicsTask` | Polls recently active categories every 10 minutes |
 | `RefreshTopicsTask` | Re-walks every page of every category every ~10 hours (seeders, size, updates) |
 | `DownloadTopicsTask` | Downloads HTML and `.torrent` for new or changed topics |
-| `RefreshImdbTask` | Downloads the IMDB dataset and swaps it in atomically every 5 hours |
+| `RefreshImdbTask` | Downloads the IMDB dataset once a day into its own SQLite file (`IMDB_DATABASE_PATH`) and swaps it in atomically |
 | `ParseTopicsTask` | Turns downloaded pages into `release` rows. Pages are re-parsed when they change or when `PARSER_VERSION` is bumped. |
 
 ### 2. Torznab API
@@ -146,6 +146,7 @@ All configuration comes from environment variables. Copy `.env.example` to `.env
 | `DATABASE_URL` | Yes | SQLAlchemy async URL, either `sqlite+aiosqlite:///toloka.db` or `postgresql+asyncpg://...`. The Docker image sets it to `sqlite+aiosqlite:////data/toloka.db`. |
 | `TOLOKA_USERNAME` | Yes | toloka.to login |
 | `TOLOKA_PASSWORD` | Yes | toloka.to password |
+| `IMDB_DATABASE_PATH` | No | SQLite file for the IMDB titles the scraper matches against (default: `imdb.db`; the Docker image sets `/data/imdb.db`) |
 | `API_PORT` | No | API port (default: `8000`) |
 | `LOG_LEVEL` | No | Logging level (default: `INFO`) |
 | `OPENAI_API_KEY` | No | Enables the LLM fallback for file → episode mapping |
@@ -178,7 +179,7 @@ The included `docker-compose.yml` is a development stack:
 Docker Compose loads `.env` from the working directory. To use PostgreSQL, set
 `DATABASE_URL=postgresql+asyncpg://postgres:password@postgres:5432/toloka`.
 
-A production image is built by `.github/workflows/docker-build-push.yml` and pushed to `ghcr.io/vanchaxy/ukr-torznab`. The version in `ukr_torznab/__init__.py` must be an `rc` version on branches and a non-`rc` version on `main`.
+A production image is built by `.github/workflows/docker-build-push.yml` and pushed to `ghcr.io/<repository>`, with each platform built on a native runner. Every branch gets `sha-*` and branch tags; `main` also gets `latest` and the version in `ukr_torznab/__init__.py`.
 
 ---
 
@@ -245,7 +246,6 @@ browser-extension/   Chrome extension showing parser output on toloka.to / utp.t
 | `topic` | Topic listing data from toloka.to (name, category, size, seeders, status, change hash) |
 | `page` | Downloaded HTML and `.torrent` for each topic |
 | `release` | Parsed release data that the API and renamer query. `result` is `ok` or a skip reason. |
-| `imdb_titles` | Local IMDB title database used for ID matching |
 | `skyhook` | Cached Skyhook responses (TVDB series metadata) |
 | `servarr` | Cached Radarr metadata responses (TMDB movie metadata) |
 | `electric_offset` | Resume offsets for ElectricSQL shape subscriptions |

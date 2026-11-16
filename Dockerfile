@@ -22,7 +22,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     MALLOC_ARENA_MAX=2 \
     MALLOC_TRIM_THRESHOLD_=131072 \
-    DATABASE_URL=sqlite+aiosqlite:////data/toloka.db
+    DATABASE_URL=sqlite+aiosqlite:////data/toloka.db \
+    IMDB_DATABASE_PATH=/data/imdb.db
 
 WORKDIR /app
 RUN mkdir /data

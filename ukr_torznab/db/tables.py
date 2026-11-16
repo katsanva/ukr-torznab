@@ -111,20 +111,6 @@ electric_offset = sa.Table(
     sa.Column("offset", sa.Text, nullable=False),
 )
 
-imdb_titles = sa.Table(
-    "imdb_titles",
-    metadata,
-    sa.Column("id", sa.Integer, primary_key=True),
-    sa.Column("title_type", sa.Text, nullable=True),
-    sa.Column("primary_title", sa.Text, nullable=True),
-    sa.Column("original_title", sa.Text, nullable=True),
-    sa.Column("is_adult", sa.Integer, nullable=True),
-    sa.Column("start_year", sa.Integer, nullable=True),
-    sa.Column("end_year", sa.Integer, nullable=True),
-    sa.Column("runtime_minutes", sa.Integer, nullable=True),
-    sa.Column("genres", sa.Text, nullable=True),
-)
-
 # Topic pages from 0day.community, fetched on demand. A page is fetched again when the title or
 # size on the list page changes, which is how 0day shows an updated topic.
 zeroday_topic = sa.Table(

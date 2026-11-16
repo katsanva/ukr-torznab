@@ -16,7 +16,7 @@ DATABASE_URL=sqlite+aiosqlite:///toloka.db TOLOKA_USERNAME=... TOLOKA_PASSWORD=.
 docker compose up                       # dev stack: postgres, electric, sonarr, prowlarr
 ```
 
-There is no test suite. Verify changes against a local SQLite DB (see "Verifying changes").
+Tests are a few `test_*.py` files next to their code (`pytest ukr_torznab`). Verify changes against a local SQLite DB (see "Verifying changes").
 `settings.py` reads `DATABASE_URL`, `TOLOKA_USERNAME` and `TOLOKA_PASSWORD` at import time, so set dummy values
 for any script that imports the package. `ELECTRIC_URL` defaults to `https://electric.vnchx.com` (consumer mode).
 
@@ -56,8 +56,8 @@ for any script that imports the package. `ELECTRIC_URL` defaults to `https://ele
 - Adding a new `AudioSource` also requires an entry in `AUDIO_SOURCE_DISPLAY`. `__str__` raises `KeyError` otherwise.
 - Times are stored timezone-aware. Toloka shows Kyiv local time, so use `utils.KYIV_TZ`. `utils.EPOCH` is the
   "unknown date" placeholder.
-- Version lives in `ukr_torznab/__init__.py`: no `rc` suffix on `main` (CI fails otherwise). Branches push images
-  only with an `rcN` suffix; without one CI builds but skips the push.
+- Version lives in `ukr_torznab/__init__.py`; CI tags `main` images with it. Every branch pushes `sha-*` and
+  branch-name tags.
 
 ## Verifying changes
 

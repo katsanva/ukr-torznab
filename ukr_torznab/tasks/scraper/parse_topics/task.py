@@ -3,13 +3,12 @@ import logging
 from datetime import datetime
 
 from openai import AsyncOpenAI
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from ukr_torznab.clients.servarr import ServarrClient
 from ukr_torznab.clients.skyhook import SkyhookClient
+from ukr_torznab.db import imdb
 from ukr_torznab.db.queries import get_page_to_parse, upsert_release
-from ukr_torznab.db.tables import imdb_titles
 from ukr_torznab.tasks.base import AbstractTask
 from ukr_torznab.tasks.scraper.parse_topics.models import SkippedPage
 from ukr_torznab.tasks.scraper.parse_topics.processor import process_single_page
@@ -29,22 +28,12 @@ class ParseTopicsTask(AbstractTask):
         self.skyhook_client = skyhook_client
         self.servarr_client = servarr_client
         self.openai_client = openai_client
-        self._imdb_ready = False
 
     async def run_once(self):
-        if not self._imdb_ready:
-            async with self.engine.connect() as conn:
-                imdb_count = (
-                    await conn.execute(select(func.count()).select_from(imdb_titles))
-                ).scalar()
-            if not imdb_count:
-                logger.warning(
-                    "imdb_titles table is empty, skipping parse — waiting for RefreshImdbTask",
-                )
-                await self.interruptible_sleep(60)
-                return
-            logger.info("imdb_titles table is ready (%d rows)", imdb_count)
-            self._imdb_ready = True
+        if not imdb.is_ready():
+            logger.warning("IMDB titles are not downloaded yet, waiting for RefreshImdbTask")
+            await self.interruptible_sleep(60)
+            return
 
         async with self.engine.connect() as conn:
             rows = await get_page_to_parse(conn)
@@ -57,12 +46,9 @@ class ParseTopicsTask(AbstractTask):
         for row in rows:
             if not self.running:
                 return
-            # One transaction per page: a batch-wide one stays open across hundreds of
-            # metadata requests, and the SQLite write-ahead log grows until it commits.
-            async with self.engine.begin() as conn:
-                await self._parse_row(conn, row)
+            await self._parse_row(row)
 
-    async def _parse_row(self, conn: AsyncConnection, row) -> None:
+    async def _parse_row(self, row) -> None:
         cached_hash = row.video_files_hash
         cached_fte = None
         if row.file_to_episode:
@@ -70,28 +56,25 @@ class ParseTopicsTask(AbstractTask):
         cached_sc = row.season_complete
 
         logger.info("Parsing page %s", row.id)
-        result = await process_single_page(
-            conn,
-            self.skyhook_client,
-            self.servarr_client,
-            row,
-            cached_video_files_hash=cached_hash,
-            cached_file_to_episode=cached_fte,
-            cached_season_complete=cached_sc,
-            openai_client=self.openai_client,
-        )
+        # Parsing makes metadata (and maybe LLM) requests, so it runs outside any write
+        # transaction: one held across requests keeps SQLite from resetting its write-ahead log.
+        async with self.engine.connect() as conn:
+            result = await process_single_page(
+                conn,
+                self.skyhook_client,
+                self.servarr_client,
+                row,
+                cached_video_files_hash=cached_hash,
+                cached_file_to_episode=cached_fte,
+                cached_season_complete=cached_sc,
+                openai_client=self.openai_client,
+            )
 
         now = datetime.now().astimezone()
 
         if isinstance(result, SkippedPage):
             logger.info("Page %s skipped: %s", row.id, result.reason.name)
-            await upsert_release(
-                conn,
-                id=row.id,
-                result=result.reason.name,
-                parsed_at=now,
-                hash_changed_at=now,
-            )
+            values = {"result": result.reason.name, "hash_changed_at": now}
         else:
             prev_hash = row.prev_content_hash
             if result.content_hash != prev_hash:
@@ -109,12 +92,7 @@ class ParseTopicsTask(AbstractTask):
                 )
             else:
                 logger.info("Page %s parsed ok: %s (%s)", row.id, result.title, result.year)
+            values = {"result": "ok", "hash_changed_at": hash_changed_at, "parsed_page": result}
 
-            await upsert_release(
-                conn,
-                id=row.id,
-                result="ok",
-                parsed_at=now,
-                hash_changed_at=hash_changed_at,
-                parsed_page=result,
-            )
+        async with self.engine.begin() as conn:
+            await upsert_release(conn, id=row.id, parsed_at=now, **values)

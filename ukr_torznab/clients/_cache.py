@@ -42,8 +42,11 @@ async def write_cached(
         "response": json.dumps(response) if response else None,
         "updated_at": datetime.now(UTC),
     }
-    await conn.execute(
-        upsert(table, conn)
-        .values({"imdbid": imdb_id, **values})
-        .on_conflict_do_update(index_elements=["imdbid"], set_=values),
-    )
+    # Committed on its own connection, so the caller's connection never holds a write
+    # transaction across the requests that follow.
+    async with conn.engine.begin() as write_conn:
+        await write_conn.execute(
+            upsert(table, write_conn)
+            .values({"imdbid": imdb_id, **values})
+            .on_conflict_do_update(index_elements=["imdbid"], set_=values),
+        )
