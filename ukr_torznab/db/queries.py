@@ -80,6 +80,20 @@ async def upsert_topic(
     return await conn.execute(query)
 
 
+def _incomplete_page_ids():
+    """Ids of pages still missing html or torrent, read from the ix_page_incomplete partial index.
+
+    The conditions must stay exactly as in that index, or SQLite reads every page row.
+    """
+    incomplete = page.alias("incomplete")
+    return select(incomplete.c.id).where(
+        or_(incomplete.c.html.is_(None), incomplete.c.torrent.is_(None)),
+    )
+
+
+# The polls below only read page.id and page.downloaded_at (ix_page_downloaded) and test html and
+# torrent through _incomplete_page_ids: reading those columns from a page row on SQLite walks
+# the blobs, and a scan of every row that way reads gigabytes.
 async def get_topic_id_to_download(conn: AsyncConnection):
     now = datetime.now().astimezone()
     three_hours_ago = now - timedelta(hours=3)
@@ -93,8 +107,8 @@ async def get_topic_id_to_download(conn: AsyncConnection):
                 page.columns.id.is_(None),
                 topic.columns.hash_changed_at > page.columns.downloaded_at,
                 and_(
-                    or_(page.columns.html.is_(None), page.columns.torrent.is_(None)),
                     page.columns.downloaded_at <= three_hours_ago,
+                    page.columns.id.in_(_incomplete_page_ids()),
                 ),
             ),
         )
@@ -128,6 +142,20 @@ async def upsert_page(
 
 
 async def get_page_to_parse(conn: AsyncConnection):
+    candidate, prev = page.alias("candidate"), release.alias("prev")
+    page_ids = (
+        select(candidate.c.id)
+        .outerjoin(prev, candidate.c.id == prev.c.id)
+        .where(
+            or_(
+                prev.c.id.is_(None),
+                candidate.c.downloaded_at > prev.c.parsed_at,
+                prev.c.parser_version < PARSER_VERSION,
+            ),
+            candidate.c.id.not_in(_incomplete_page_ids()),
+        )
+        .limit(500)
+    )
     query = (
         select(
             page,
@@ -138,16 +166,7 @@ async def get_page_to_parse(conn: AsyncConnection):
             release.c.hash_changed_at.label("prev_hash_changed_at"),
         )
         .outerjoin(release, page.c.id == release.c.id)
-        .where(page.c.html.is_not(None))
-        .where(page.c.torrent.is_not(None))
-        .where(
-            or_(
-                release.c.id.is_(None),
-                page.c.downloaded_at > release.c.parsed_at,
-                release.c.parser_version < PARSER_VERSION,
-            ),
-        )
-        .limit(500)
+        .where(page.c.id.in_(page_ids))
     )
     return (await conn.execute(query)).fetchall()
 
