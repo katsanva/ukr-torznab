@@ -9,15 +9,33 @@ permissions:
   contents: read
   packages: write
 
+env:
+  # The repository running the workflow, so a fork publishes to its own namespace.
+  IMAGE: ghcr.io/${{ github.repository }}
+
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
+  # Each platform builds on a native runner (no QEMU) and is pushed by digest only;
+  # the merge job tags the combined manifest.
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
+      - name: Prepare
+        run: |
+          echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> "$GITHUB_ENV"
+          echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
+        env:
+          PLATFORM: ${{ matrix.platform }}
+
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -29,46 +47,89 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract labels for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
+
+      - name: Export digest
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - name: Prepare
+        run: echo "IMAGE=${IMAGE,,}" >> "$GITHUB_ENV"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Read package version
         id: version
         run: |
           VERSION=$(grep -Po '__version__\s*=\s*"\K[^"]+' ukr_torznab/__init__.py)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Validate version against branch
-        id: validate
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          BRANCH="${{ github.ref_name }}"
-          PUSH=true
-          if [[ "$VERSION" =~ rc ]]; then
-            if [[ "$BRANCH" == "main" ]]; then
-              echo "::error::rc version '$VERSION' is not allowed on main"
-              exit 1
-            fi
-          elif [[ "$BRANCH" != "main" ]]; then
-            echo "::notice::non-rc version '$VERSION' on branch '$BRANCH': building without pushing"
-            PUSH=false
-          fi
-          echo "push=$PUSH" >> "$GITHUB_OUTPUT"
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
 
-      - name: Extract metadata (tags, labels) for Docker
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Every branch gets sha and branch tags; latest and the version only come from main.
+      - name: Extract metadata (tags) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/vanchaxy/ukr-torznab
+          images: ${{ env.IMAGE }}
           tags: |
             type=sha
+            type=ref,event=branch
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.version }},enable={{is_default_branch}}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: ${{ steps.validate.outputs.push == 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Create and push manifest list
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "$IMAGE@sha256:%s " *)
+
+      - name: Inspect image
+        run: docker buildx imagetools inspect "$IMAGE:${{ steps.meta.outputs.version }}"
